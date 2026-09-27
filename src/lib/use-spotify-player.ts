@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { Memory } from "./types";
 
 const SDK_URL = "https://sdk.scdn.co/spotify-player.js";
+const VOLUME_STORAGE_KEY = "afterglow-volume-v1";
 let sdkPromise: Promise<void> | null = null;
 
 function loadSdk(): Promise<void> {
@@ -99,6 +100,12 @@ export function useSpotifyPlayer(enabled: boolean) {
   const [positionMs, setPositionMs] = useState(0);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [volume, setVolumeState] = useState(0.6);
+  const [volumeSupported, setVolumeSupported] = useState(true);
+  const volumeRef = useRef(0.6);
+  const volumeLoadedRef = useRef(false);
+  const volumeSupportedRef = useRef(true);
+  const volumeWorkerRef = useRef<{ player: Spotify.Player } | null>(null);
   const playerRef = useRef<Spotify.Player | null>(null);
   const deviceRef = useRef<string | null>(null);
   const activeRef = useRef<ActiveClip | null>(null);
@@ -107,6 +114,67 @@ export function useSpotifyPlayer(enabled: boolean) {
   const endTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const commandsRef = useRef<Promise<void>>(Promise.resolve());
   const playControllersRef = useRef(new Set<AbortController>());
+
+  const applyVolume = useCallback(() => {
+    const player = playerRef.current;
+    if (!player || !deviceRef.current || !volumeSupportedRef.current) return;
+    if (volumeWorkerRef.current?.player === player) return;
+    const worker = { player };
+    volumeWorkerRef.current = worker;
+    void (async () => {
+      let applied: number | null = null;
+      try {
+        // One SDK write at a time; intermediate drag values collapse into the
+        // latest preference instead of racing with one another.
+        while (
+          playerRef.current === player &&
+          deviceRef.current &&
+          applied !== volumeRef.current
+        ) {
+          const requested: number = volumeRef.current;
+          try {
+            await player.setVolume(requested);
+          } catch {
+            if (
+              playerRef.current === player &&
+              deviceRef.current &&
+              requested === volumeRef.current
+            ) {
+              setError(
+                "Spotify could not change volume. Try again or use your device’s volume controls.",
+              );
+              break;
+            }
+          }
+          applied = requested;
+        }
+      } finally {
+        if (volumeWorkerRef.current === worker) volumeWorkerRef.current = null;
+      }
+    })();
+  }, []);
+
+  const setVolume = useCallback(
+    (value: number): void => {
+      if (!Number.isFinite(value)) return;
+      if (!volumeSupportedRef.current) {
+        setError(
+          "On iPhone and iPad, use your device’s volume buttons or Control Center.",
+        );
+        return;
+      }
+      const next = Math.min(1, Math.max(0, value));
+      volumeRef.current = next;
+      setVolumeState(next);
+      try {
+        window.localStorage.setItem(VOLUME_STORAGE_KEY, String(next));
+      } catch {
+        // Playback remains usable when browser storage is unavailable.
+      }
+      applyVolume();
+    },
+    [applyVolume],
+  );
 
   const stopPolling = useCallback(() => {
     if (pollRef.current !== null) clearTimeout(pollRef.current);
@@ -313,6 +381,27 @@ export function useSpotifyPlayer(enabled: boolean) {
   );
 
   useEffect(() => {
+    if (!volumeLoadedRef.current) {
+      volumeLoadedRef.current = true;
+      const { userAgent, platform, maxTouchPoints } = window.navigator;
+      const supported = !(
+        /iPad|iPhone|iPod/.test(userAgent) ||
+        (platform === "MacIntel" && maxTouchPoints > 1)
+      );
+      volumeSupportedRef.current = supported;
+      setVolumeSupported(supported);
+      try {
+        const stored = window.localStorage.getItem(VOLUME_STORAGE_KEY);
+        const parsed =
+          stored === null || stored.trim() === "" ? NaN : Number(stored);
+        if (Number.isFinite(parsed) && parsed >= 0 && parsed <= 1) {
+          volumeRef.current = parsed;
+          setVolumeState(parsed);
+        }
+      } catch {
+        // The default also covers private contexts that deny storage access.
+      }
+    }
     let alive = true;
     let connectionFailed = false;
     let instance: Spotify.Player | null = null;
@@ -346,7 +435,7 @@ export function useSpotifyPlayer(enabled: boolean) {
           if (!alive) return;
           instance = new window.Spotify.Player({
             name: "Afterglow",
-            volume: 0.6,
+            volume: volumeRef.current,
             getOAuthToken: (callback) => {
               const controller = new AbortController();
               tokenControllers.add(controller);
@@ -399,6 +488,7 @@ export function useSpotifyPlayer(enabled: boolean) {
             connectionFailed = false;
             setReady(true);
             setError(null);
+            applyVolume();
           });
           player.addListener("not_ready", () => {
             if (!alive) return;
@@ -468,7 +558,7 @@ export function useSpotifyPlayer(enabled: boolean) {
       if (playerRef.current === instance) playerRef.current = null;
       instance?.disconnect();
     };
-  }, [enabled, consumeState, stopPolling]);
+  }, [enabled, applyVolume, consumeState, stopPolling]);
 
   const play = useCallback(
     async (memory: Memory): Promise<void> => {
@@ -613,5 +703,8 @@ export function useSpotifyPlayer(enabled: boolean) {
     ready,
     error,
     clearError,
+    volume,
+    setVolume,
+    volumeSupported,
   };
 }

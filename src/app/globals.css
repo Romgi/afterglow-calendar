@@ -802,6 +802,89 @@ main {
 .player-caption svg {
   color: #647057;
 }
+.player-utilities {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 20px;
+  min-width: 0;
+}
+.volume-control {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 164px;
+  flex-shrink: 0;
+  color: #647057;
+}
+.volume-control > svg {
+  flex-shrink: 0;
+}
+.volume-value {
+  width: 33px;
+  flex-shrink: 0;
+  text-align: right;
+  font-family: var(--font-mono), monospace;
+  font-size: 11px;
+  color: #626c58;
+}
+input.volume-slider {
+  appearance: none;
+  -webkit-appearance: none;
+  min-width: 0;
+  flex: 1;
+  height: 32px;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+  border-radius: 5px;
+}
+.volume-slider::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 4px;
+  background: linear-gradient(
+    to right,
+    #718553 var(--volume-level),
+    #e1e6d8 var(--volume-level)
+  );
+}
+.volume-slider::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -5px;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  background: #657a48;
+  box-shadow: 0 0 0 1px #657a4833;
+}
+.volume-slider::-moz-range-track {
+  height: 4px;
+  border-radius: 4px;
+  background: #e1e6d8;
+}
+.volume-slider::-moz-range-progress {
+  height: 4px;
+  border-radius: 4px;
+  background: #718553;
+}
+.volume-slider::-moz-range-thumb {
+  width: 10px;
+  height: 10px;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  background: #657a48;
+  box-shadow: 0 0 0 1px #657a4833;
+}
+.volume-device {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
 .empty-memory {
   padding-top: 25px;
   text-align: center;
@@ -1383,7 +1466,11 @@ input[type="range"] {
     min-height: 106px;
   }
   .player-bar {
-    grid-template-columns: 1fr 360px;
+    grid-template-columns: minmax(0, 1fr) minmax(160px, 1.2fr) 145px;
+    gap: 18px;
+  }
+  .volume-control {
+    width: 145px;
   }
   .player-caption {
     display: none;
@@ -1651,10 +1738,33 @@ input[type="range"] {
     display: none;
   }
   .player-bar {
-    height: 76px;
-    padding: 12px 18px;
+    height: 116px;
+    padding: 10px 18px;
     grid-template-columns: 1fr 38px;
+    gap: 4px 12px;
+  }
+  .player-utilities {
+    grid-column: 1 / -1;
+  }
+  .volume-control {
+    width: 100%;
     gap: 12px;
+  }
+  input.volume-slider {
+    height: 36px;
+  }
+  .volume-slider::-webkit-slider-thumb {
+    width: 18px;
+    height: 18px;
+    margin-top: -7px;
+  }
+  .volume-slider::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+  }
+  .volume-device {
+    width: 100%;
+    min-height: 36px;
   }
   .player-controls {
     justify-content: flex-end;
@@ -1680,7 +1790,7 @@ input[type="range"] {
     height: 42px;
   }
   .app-shell {
-    padding-bottom: 76px;
+    padding-bottom: 116px;
   }
   .editor {
     padding: 22px;

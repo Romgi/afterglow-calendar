@@ -21,6 +21,7 @@ import {
 import { Calendar } from "./calendar";
 import { MemoryEditor } from "./memory-editor";
 import { MonthPicker } from "./month-picker";
+import { VolumeControl } from "./volume-control";
 import {
   dateKey,
   dayMemory,
@@ -726,17 +727,26 @@ export function Afterglow() {
             {secondsLabel(playingMemory?.clipEndMs ?? 0)}
           </span>
         </div>
-        <div className="player-caption">
-          <SpotifyLogo size={20} weight="fill" />
-          <span>
-            {player.playing
-              ? "Playing your favorite part"
-              : session?.user
-                ? player.ready
-                  ? "Ready when you are"
-                  : "Connecting player…"
-                : "A little time travel"}
-          </span>
+        <div className="player-utilities">
+          <div className="player-caption">
+            <SpotifyLogo size={20} weight="fill" />
+            <span>
+              {player.playing
+                ? "Playing your favorite part"
+                : session?.user
+                  ? player.ready
+                    ? "Ready when you are"
+                    : "Connecting player…"
+                  : "A little time travel"}
+            </span>
+          </div>
+          <VolumeControl
+            volume={player.volume}
+            supported={player.volumeSupported}
+            onChange={(volume) => {
+              void player.setVolume(volume);
+            }}
+          />
         </div>
       </div>
       {editor && (
