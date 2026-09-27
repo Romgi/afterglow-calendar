@@ -2,6 +2,8 @@
 
 A personal calendar for the songs that take you back. Built with Next.js, Spotify, and Neon Postgres; deployed on Vercel.
 
+**[Open Afterglow](https://afterglow-calendar.vercel.app)**
+
 ## What it does
 
 - Click an empty day, search Spotify, and give that chapter of your life a song.

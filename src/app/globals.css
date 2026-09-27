@@ -1895,3 +1895,47 @@ input[type="range"] {
     overflow-y: auto;
   }
 }
+
+body {
+  --font-serif: var(--font-editorial), Georgia, serif;
+}
+.detail-title {
+  position: relative;
+  padding-right: 42px;
+}
+.artwork-play {
+  top: 0;
+  right: 0;
+  bottom: auto;
+  transform: none;
+}
+@media (max-width: 640px) {
+  .month-picker {
+    display: grid;
+    width: 22px;
+  }
+  .month-title h2 {
+    font-size: 29px;
+  }
+  .month-controls {
+    margin-left: auto;
+  }
+  .artwork-play {
+    top: 0;
+    right: 0;
+    bottom: auto;
+    transform: none;
+  }
+  .detail-title {
+    padding-right: 40px;
+  }
+  .memory-date-range {
+    flex-wrap: wrap;
+  }
+  .date-inputs input {
+    font-size: 12px;
+  }
+  .color-field > span {
+    font-size: 10px;
+  }
+}

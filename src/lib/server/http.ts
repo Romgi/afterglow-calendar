@@ -76,3 +76,15 @@ export function assertOrigin(request: Request, allowedOrigin: string) {
     );
   }
 }
+
+export function assertAccount(request: Request, authenticatedUserId: string) {
+  // A login in another tab changes shared cookies, but not this tab's calendar.
+  // Never apply that calendar to a different account, even if revisions match.
+  if (request.headers.get("x-afterglow-user") !== authenticatedUserId) {
+    throw new ApiError(
+      409,
+      "Your signed-in account changed. Reload this page before making more changes.",
+      "account_changed",
+    );
+  }
+}

@@ -105,6 +105,7 @@ export async function accessToken(
 ): Promise<string> {
   const sql = await database();
   const leaseId = randomToken(16);
+  let rejectedAccessToken: string | null = null;
   // A database lease prevents two serverless instances from rotating the same refresh token.
   for (let attempt = 0; attempt < 30; attempt++) {
     const rows =
@@ -120,7 +121,13 @@ export async function accessToken(
         "reauth_required",
       );
     const expires = new Date(row.access_expires_at as string).getTime();
-    if (!forceRefresh && expires > Date.now() + 60_000)
+    if (forceRefresh && rejectedAccessToken === null) {
+      rejectedAccessToken = tokens.accessToken;
+    }
+    if (
+      tokens.accessToken !== rejectedAccessToken &&
+      expires > Date.now() + 60_000
+    )
       return tokens.accessToken;
     const locked = await sql`
       UPDATE afterglow_users SET refresh_lock_id = ${leaseId}, refresh_lock_until = NOW() + INTERVAL '20 seconds'
@@ -130,7 +137,8 @@ export async function accessToken(
     `;
     if (!locked.length) {
       await new Promise((resolve) => setTimeout(resolve, 300));
-      forceRefresh = false;
+      // Keep rejecting this token until the lease holder has actually replaced
+      // it. Its nominal expiry can still be in the future after a Spotify 401.
       continue;
     }
     try {

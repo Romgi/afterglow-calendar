@@ -1,15 +1,22 @@
 import { requireUser } from "@/lib/server/auth";
 import { getConfig } from "@/lib/server/config";
 import { database } from "@/lib/server/db";
-import { assertOrigin, errorResponse, json, readJson } from "@/lib/server/http";
+import {
+  assertAccount,
+  assertOrigin,
+  errorResponse,
+  json,
+  readJson,
+} from "@/lib/server/http";
 import { validateMemories } from "@/lib/server/validation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const user = await requireUser();
+    assertAccount(request, user.id);
     const sql = await database();
     const rows =
       await sql`SELECT memories, revision FROM afterglow_users WHERE id = ${user.id}`;
@@ -23,6 +30,7 @@ export async function PUT(request: Request) {
   try {
     assertOrigin(request, getConfig().origin);
     const user = await requireUser();
+    assertAccount(request, user.id);
     const { memories, revision } = validateMemories(await readJson(request));
     const sql = await database();
     const updated = await sql`

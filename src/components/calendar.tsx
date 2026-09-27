@@ -21,6 +21,7 @@ interface Props {
   onSelect: (memory: Memory, day: string) => void;
   onAdd: (day: string) => void;
   onRangeChange: (memories: Memory[], commit: boolean) => void;
+  onDragStateChange: (active: boolean) => void;
 }
 export function Calendar({
   month,
@@ -30,6 +31,7 @@ export function Calendar({
   onSelect,
   onAdd,
   onRangeChange,
+  onDragStateChange,
 }: Props) {
   const days = monthGrid(month),
     today = dateKey(new Date());
@@ -60,10 +62,12 @@ export function Calendar({
     };
     const finish = () => {
       if (changed.current) onRangeChange(latest.current, true);
+      onDragStateChange(false);
       setDrag(null);
     };
     const cancel = () => {
       onRangeChange(drag.initial, false);
+      onDragStateChange(false);
       setDrag(null);
     };
     const escape = (event: KeyboardEvent) => {
@@ -79,7 +83,7 @@ export function Calendar({
       window.removeEventListener("pointercancel", cancel);
       window.removeEventListener("keydown", escape);
     };
-  }, [drag, onRangeChange]);
+  }, [drag, onRangeChange, onDragStateChange]);
   return (
     <div
       className={`calendar ${drag ? "is-dragging" : ""}`}
@@ -176,6 +180,7 @@ export function Calendar({
                           event.preventDefault();
                           event.stopPropagation();
                           changed.current = false;
+                          onDragStateChange(true);
                           setDrag({ id: memory.id, edge, initial: memories });
                         }}
                         onKeyDown={(event) => {

@@ -57,17 +57,44 @@ export function Afterglow() {
     saved = useRef<Memory[]>([]),
     user = useRef<Session["user"]>(null),
     generation = useRef(0),
-    hasLoaded = useRef(false);
+    hasLoaded = useRef(false),
+    mutationEpoch = useRef(0),
+    readSequence = useRef(0),
+    dragging = useRef(false),
+    editing = useRef(false);
+  editing.current = editor !== null;
   const player = useSpotifyPlayer(!!session?.user);
   const selected = memories.find((m) => m.id === selectedId) ?? null;
   const playingMemory =
     memories.find((m) => m.id === player.activeId) ?? selected;
   const isDemo = !session?.user;
-  const fetchMemories = useCallback(async () => {
-    const response = await fetch("/api/memories", { cache: "no-store" });
+  const fetchMemories = useCallback(async (force = false) => {
+    const expectedUser = user.current?.id;
+    if (
+      !expectedUser ||
+      (!force && (busy.current || dragging.current || editing.current))
+    )
+      return;
+    const epoch = mutationEpoch.current;
+    const sequence = ++readSequence.current;
+    const response = await fetch("/api/memories", {
+      cache: "no-store",
+      headers: { "X-Afterglow-User": expectedUser },
+    });
     const data = await response.json();
+    if (data.code === "account_changed") {
+      window.location.reload();
+      return;
+    }
     if (!response.ok)
       throw new Error(data.error || "Your calendar could not be loaded.");
+    if (
+      sequence !== readSequence.current ||
+      expectedUser !== user.current?.id ||
+      epoch !== mutationEpoch.current ||
+      (!force && (busy.current || dragging.current || editing.current))
+    )
+      return;
     revision.current = data.revision;
     saved.current = data.memories;
     hasLoaded.current = true;
@@ -144,6 +171,7 @@ export function Afterglow() {
         );
         return;
       }
+      mutationEpoch.current++;
       pending.current = list;
       if (busy.current) return;
       busy.current = true;
@@ -155,7 +183,10 @@ export function Afterglow() {
           pending.current = null;
           const response = await fetch("/api/memories", {
             method: "PUT",
-            headers: { "Content-Type": "application/json" },
+            headers: {
+              "Content-Type": "application/json",
+              "X-Afterglow-User": user.current!.id,
+            },
             body: JSON.stringify({
               memories: next,
               revision: revision.current,
@@ -164,8 +195,14 @@ export function Afterglow() {
           const data = await response.json();
           if (!response.ok) {
             pending.current = null;
+            if (data.code === "account_changed") {
+              window.location.reload();
+              return;
+            }
             if (response.status === 409) {
-              await fetchMemories();
+              hasLoaded.current = false;
+              setEditor(null);
+              await fetchMemories(true);
               throw new Error(
                 "This calendar changed on another device. The latest version is loaded; please make your change again.",
               );
@@ -195,11 +232,16 @@ export function Afterglow() {
   const changeRange = useCallback(
     (list: Memory[], commit: boolean) => {
       if (user.current && !hasLoaded.current) return;
+      mutationEpoch.current++;
       setMemories(list);
       if (commit) void persist(list);
     },
     [persist],
   );
+  const dragState = useCallback((active: boolean) => {
+    dragging.current = active;
+    mutationEpoch.current++;
+  }, []);
   function play(memory: Memory) {
     if (!session?.user) {
       setConnectionPrompt(true);
@@ -229,6 +271,7 @@ export function Afterglow() {
     } else setEditor({ day, existing: null });
   }
   function save(memory: Memory) {
+    mutationEpoch.current++;
     const next = [...memories.filter((m) => m.id !== memory.id), memory].sort(
       (a, b) => a.start.localeCompare(b.start),
     );
@@ -240,6 +283,7 @@ export function Afterglow() {
     void persist(next);
   }
   function remove(id: string) {
+    mutationEpoch.current++;
     const next = memories.filter((m) => m.id !== id);
     setMemories(next);
     setSelectedId(null);
@@ -432,6 +476,7 @@ export function Afterglow() {
                 </div>
                 <button
                   className="button primary add-main"
+                  aria-label="Add a song"
                   disabled={loading}
                   onClick={() =>
                     add(
@@ -467,6 +512,7 @@ export function Afterglow() {
                 onSelect={select}
                 onAdd={add}
                 onRangeChange={changeRange}
+                onDragStateChange={dragState}
               />
             )}
             <div className="month-summary">
@@ -528,6 +574,8 @@ export function Afterglow() {
                     unoptimized
                     priority
                   />
+                </div>
+                <div className="detail-title">
                   <button
                     className="artwork-play"
                     aria-label={`${player.playing && player.activeId === selected.id ? "Pause" : "Play"} ${selected.track.title}`}
@@ -543,8 +591,6 @@ export function Afterglow() {
                       <Play size={22} weight="fill" />
                     )}
                   </button>
-                </div>
-                <div className="detail-title">
                   <h2>{selected.track.title}</h2>
                   <p>{selected.track.artist}</p>
                   <a

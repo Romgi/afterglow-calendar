@@ -85,6 +85,9 @@ interface ActiveClip {
   uri: string;
   start: number;
   end: number;
+  duration: number;
+  lastPosition: number;
+  lastObservedAt: number;
   issuedAt: number;
   acknowledged: boolean;
   started: boolean;
@@ -101,12 +104,15 @@ export function useSpotifyPlayer(enabled: boolean) {
   const activeRef = useRef<ActiveClip | null>(null);
   const requestRef = useRef(0);
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const endTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const commandsRef = useRef<Promise<void>>(Promise.resolve());
   const playControllersRef = useRef(new Set<AbortController>());
 
   const stopPolling = useCallback(() => {
     if (pollRef.current !== null) clearTimeout(pollRef.current);
+    if (endTimerRef.current !== null) clearTimeout(endTimerRef.current);
     pollRef.current = null;
+    endTimerRef.current = null;
   }, []);
 
   // Serial commands prevent an older HTTP play request from arriving after a
@@ -116,6 +122,56 @@ export function useSpotifyPlayer(enabled: boolean) {
     commandsRef.current = command.catch(() => undefined);
     return command;
   }, []);
+
+  const finishClip = useCallback(
+    (clip: ActiveClip, player: Spotify.Player) => {
+      if (
+        activeRef.current !== clip ||
+        requestRef.current !== clip.request ||
+        playerRef.current !== player
+      )
+        return;
+      stopPolling();
+      activeRef.current = null;
+      setPlaying(false);
+      setPositionMs(clip.end);
+      void enqueue(async () => {
+        if (requestRef.current !== clip.request || playerRef.current !== player)
+          return;
+        try {
+          await player.pause();
+        } catch (cause) {
+          if (
+            requestRef.current === clip.request &&
+            playerRef.current === player
+          ) {
+            setPlaying(true);
+            setError(
+              messageOf(
+                cause,
+                "Spotify could not pause at the end of your clip.",
+              ),
+            );
+          }
+        }
+      });
+    },
+    [enqueue, stopPolling],
+  );
+
+  const armClipEnd = useCallback(
+    (clip: ActiveClip, player: Spotify.Player, position: number) => {
+      if (endTimerRef.current !== null) clearTimeout(endTimerRef.current);
+      // Keep an independent cutoff if SDK state becomes null or stops resolving.
+      // At a full-track boundary, a tiny lead avoids Spotify's next-track autoplay.
+      const trackEndLead = clip.end >= clip.duration - 50 ? 50 : 0;
+      endTimerRef.current = setTimeout(
+        () => finishClip(clip, player),
+        Math.max(0, clip.end - position - trackEndLead),
+      );
+    },
+    [finishClip],
+  );
 
   const consumeState = useCallback(
     (state: Spotify.PlaybackState | null) => {
@@ -130,8 +186,22 @@ export function useSpotifyPlayer(enabled: boolean) {
         return;
       const uri = state?.track_window.current_track.uri;
       const linkedUri = state?.track_window.current_track.linked_from?.uri;
-      if (!state || (uri !== clip.uri && linkedUri !== clip.uri)) {
+      // A transient null must not discard the independently armed clip cutoff.
+      if (!state) return;
+      if (uri !== clip.uri && linkedUri !== clip.uri) {
         if (clip.started) {
+          const elapsed = Date.now() - clip.lastObservedAt;
+          const naturalEnding =
+            clip.end >= clip.duration - 100 &&
+            clip.lastPosition >= clip.duration - 1_000 &&
+            elapsed < 3_000 &&
+            clip.lastPosition + elapsed >= clip.end - 250;
+          if (naturalEnding) {
+            finishClip(clip, player);
+            return;
+          }
+          // A different track selected well before the clip ends is external
+          // playback control; release it without pausing the user's new choice.
           stopPolling();
           activeRef.current = null;
           setPlaying(false);
@@ -139,7 +209,14 @@ export function useSpotifyPlayer(enabled: boolean) {
         }
         return;
       }
-      if (state.loading) return;
+      if (state.loading) {
+        // Refresh the remaining time while buffering is positively observed,
+        // but keep a cutoff if the next SDK update disappears entirely.
+        clip.lastPosition = Math.max(clip.start, state.position);
+        clip.lastObservedAt = Date.now();
+        armClipEnd(clip, player, clip.lastPosition);
+        return;
+      }
       if (!clip.started) {
         if (state.paused) return;
         // A previous playback of the same song may still be in the SDK cache
@@ -149,50 +226,44 @@ export function useSpotifyPlayer(enabled: boolean) {
           state.position <= clip.start + 3_000;
         if (!nearStart && state.timestamp < clip.issuedAt) return;
         clip.started = true;
+        clip.lastPosition = state.position;
+        clip.lastObservedAt = Date.now();
       }
       setPositionMs(state.position);
       setPlaying(!state.paused);
+      if (state.position >= clip.end) {
+        finishClip(clip, player);
+        return;
+      }
       if (state.paused) {
+        if (
+          clip.end >= clip.duration - 100 &&
+          clip.lastPosition >= clip.duration - 1_000 &&
+          clip.lastPosition + Date.now() - clip.lastObservedAt >= clip.end - 250
+        ) {
+          finishClip(clip, player);
+          return;
+        }
         stopPolling();
         activeRef.current = null;
         return;
       }
-      if (state.position >= clip.end) {
-        stopPolling();
-        activeRef.current = null;
-        setPlaying(false);
-        setPositionMs(clip.end);
-        void enqueue(async () => {
-          if (
-            requestRef.current !== clip.request ||
-            playerRef.current !== player
-          )
-            return;
-          try {
-            await player.pause();
-          } catch (cause) {
-            if (
-              requestRef.current === clip.request &&
-              playerRef.current === player
-            ) {
-              setPlaying(true);
-              setError(
-                messageOf(
-                  cause,
-                  "Spotify could not pause at the end of your clip.",
-                ),
-              );
-            }
-          }
-        });
+      if (clip.lastPosition !== state.position) {
+        clip.lastPosition = state.position;
+        clip.lastObservedAt = Date.now();
       }
+      // Repeated cached SDK samples must not postpone the cutoff forever.
+      const estimatedPosition =
+        clip.lastPosition + Date.now() - clip.lastObservedAt;
+      armClipEnd(clip, player, estimatedPosition);
     },
-    [enqueue, stopPolling],
+    [armClipEnd, finishClip, stopPolling],
   );
 
   const startPolling = useCallback(
     (request: number) => {
-      stopPolling();
+      if (pollRef.current !== null) clearTimeout(pollRef.current);
+      pollRef.current = null;
       const tick = async () => {
         const player = playerRef.current;
         const clip = activeRef.current;
@@ -213,8 +284,7 @@ export function useSpotifyPlayer(enabled: boolean) {
             !clip.started &&
             Date.now() - clip.issuedAt > 15_000
           ) {
-            activeRef.current = null;
-            setPlaying(false);
+            finishClip(clip, player);
             setError(
               "Spotify did not start playback. Try the song again, or reconnect Spotify.",
             );
@@ -223,8 +293,8 @@ export function useSpotifyPlayer(enabled: boolean) {
         } catch (cause) {
           if (requestRef.current !== request || playerRef.current !== player)
             return;
-          activeRef.current = null;
-          setPlaying(false);
+          // The independent cutoff remains armed while playback status is
+          // unavailable; dropping it here could leave the song running.
           setError(
             messageOf(
               cause,
@@ -239,7 +309,7 @@ export function useSpotifyPlayer(enabled: boolean) {
       };
       void tick();
     },
-    [consumeState, stopPolling],
+    [consumeState, finishClip],
   );
 
   useEffect(() => {
@@ -336,6 +406,7 @@ export function useSpotifyPlayer(enabled: boolean) {
             setReady(false);
             fail(
               "Spotify’s player disconnected. Check your connection and reconnect.",
+              true,
             );
           });
           player.addListener("player_state_changed", (state) => {
@@ -440,6 +511,9 @@ export function useSpotifyPlayer(enabled: boolean) {
         uri: memory.track.uri,
         start,
         end,
+        duration: memory.track.durationMs,
+        lastPosition: start,
+        lastObservedAt: Date.now(),
         issuedAt: Date.now(),
         acknowledged: false,
         started: false,
@@ -484,6 +558,7 @@ export function useSpotifyPlayer(enabled: boolean) {
           if (clip?.request === request) {
             clip.acknowledged = true;
             clip.issuedAt = Date.now();
+            armClipEnd(clip, player, start);
             startPolling(request);
           }
         } catch (cause) {
@@ -502,7 +577,7 @@ export function useSpotifyPlayer(enabled: boolean) {
         }
       });
     },
-    [enabled, enqueue, startPolling, stopPolling],
+    [enabled, enqueue, armClipEnd, startPolling, stopPolling],
   );
 
   const pause = useCallback(async (): Promise<void> => {

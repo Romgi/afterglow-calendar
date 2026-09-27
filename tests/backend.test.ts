@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Memory } from "../src/lib/types";
-import { assertOrigin, readJson } from "../src/lib/server/http";
+import {
+  ApiError,
+  assertAccount,
+  assertOrigin,
+  readJson,
+} from "../src/lib/server/http";
 import { challenge, seal, unseal } from "../src/lib/server/crypto";
 import {
   isSpotifyArtwork,
@@ -11,6 +16,32 @@ import {
 } from "../src/lib/server/validation";
 
 const trackId = "4iV5W9uYEdYUVa79Axb7Rh";
+
+test("a tab cannot read or overwrite another account after a cookie account switch", () => {
+  for (const method of ["GET", "PUT"]) {
+    const request = new Request("https://example.test/api/memories", {
+      method,
+      headers: { "X-Afterglow-User": "original-account" },
+    });
+    assert.doesNotThrow(() => assertAccount(request, "original-account"));
+    assert.throws(
+      () => assertAccount(request, "new-account"),
+      (error: unknown) =>
+        error instanceof ApiError &&
+        error.status === 409 &&
+        error.code === "account_changed",
+    );
+  }
+  assert.throws(
+    () =>
+      assertAccount(
+        new Request("https://example.test/api/memories"),
+        "signed-in-account",
+      ),
+    /account changed/,
+  );
+});
+
 function memory(overrides: Partial<Memory> = {}): Memory {
   return {
     id: "memory_1",
