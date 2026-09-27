@@ -26,6 +26,7 @@ import { SongSuggestions } from "./song-suggestions";
 interface Props {
   day: string;
   existing: Memory | null;
+  chooseSong?: boolean;
   memories: Memory[];
   demo: boolean;
   userId?: string;
@@ -37,6 +38,7 @@ interface Props {
 export function MemoryEditor({
   day,
   existing,
+  chooseSong = false,
   memories,
   demo,
   userId,
@@ -46,7 +48,10 @@ export function MemoryEditor({
   onPreview,
 }: Props) {
   const dialog = useRef<HTMLDialogElement>(null);
-  const [track, setTrack] = useState<Track | null>(existing?.track ?? null);
+  const [track, setTrack] = useState<Track | null>(
+    chooseSong ? null : (existing?.track ?? null),
+  );
+  const [suggestionDay, setSuggestionDay] = useState(day);
   const [query, setQuery] = useState(""),
     [results, setResults] = useState<Track[]>(demo ? demoTracks : []),
     [searching, setSearching] = useState(false),
@@ -209,7 +214,7 @@ export function MemoryEditor({
           </label>
           {query.trim().length < 2 ? (
             <SongSuggestions
-              day={start || day}
+              day={suggestionDay}
               userId={userId}
               onChoose={(value) => void choose(value)}
             />
@@ -295,7 +300,10 @@ export function MemoryEditor({
                 <input
                   type="date"
                   value={start}
-                  onChange={(e) => setStart(e.target.value)}
+                  onChange={(e) => {
+                    setStart(e.target.value);
+                    if (e.target.value) setSuggestionDay(e.target.value);
+                  }}
                 />
               </label>
               <span>→</span>

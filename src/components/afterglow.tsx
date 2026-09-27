@@ -51,6 +51,7 @@ export function Afterglow() {
   const [editor, setEditor] = useState<{
       day: string;
       existing: Memory | null;
+      chooseSong?: boolean;
     } | null>(null),
     [notice, setNotice] = useState(""),
     [accountOpen, setAccountOpen] = useState(false);
@@ -140,6 +141,7 @@ export function Afterglow() {
                 setEditor({
                   day: suggestionDay,
                   existing: dayMemory(suggestionDay, saved.current) ?? null,
+                  chooseSong: true,
                 });
               }
             }
@@ -295,7 +297,7 @@ export function Afterglow() {
     if (occupied) {
       setSelectedId(occupied.id);
       setSelectedDay(day);
-      setEditor({ day, existing: occupied });
+      setEditor({ day, existing: occupied, chooseSong: true });
     } else setEditor({ day, existing: null });
   }
   function save(memory: Memory) {
@@ -781,6 +783,7 @@ export function Afterglow() {
           key={editor.existing?.id ?? editor.day}
           day={editor.day}
           existing={editor.existing}
+          chooseSong={editor.chooseSong}
           memories={memories}
           demo={isDemo}
           userId={session?.user?.id}
