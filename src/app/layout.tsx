@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Manrope, DM_Mono, Instrument_Serif } from "next/font/google";
+import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
 const sans = Manrope({ subsets: ["latin"], variable: "--font-sans" });
 const mono = DM_Mono({
@@ -26,6 +27,7 @@ export default function RootLayout({
     <html lang="en">
       <body className={`${sans.variable} ${mono.variable} ${serif.variable}`}>
         {children}
+        <Analytics />
       </body>
     </html>
   );
