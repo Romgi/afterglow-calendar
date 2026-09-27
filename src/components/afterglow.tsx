@@ -4,7 +4,6 @@ import Image from "next/image";
 import {
   ArrowSquareOut,
   Asterisk,
-  CalendarBlank,
   CaretLeft,
   CaretRight,
   Check,
@@ -21,6 +20,7 @@ import {
 } from "@phosphor-icons/react";
 import { Calendar } from "./calendar";
 import { MemoryEditor } from "./memory-editor";
+import { MonthPicker } from "./month-picker";
 import {
   dateKey,
   dayMemory,
@@ -420,20 +420,7 @@ export function Afterglow() {
                   {month.toLocaleDateString("en-US", { month: "long" })}
                   <span>{month.getFullYear()}</span>
                 </h2>
-                <label className="month-picker" title="Jump to a month">
-                  <CalendarBlank size={17} />
-                  <input
-                    type="month"
-                    aria-label="Jump to month"
-                    value={`${month.getFullYear()}-${String(month.getMonth() + 1).padStart(2, "0")}`}
-                    onChange={(e) => {
-                      if (e.target.value) {
-                        const [y, m] = e.target.value.split("-").map(Number);
-                        setMonth(new Date(y, m - 1, 1));
-                      }
-                    }}
-                  />
-                </label>
+                <MonthPicker month={month} onChange={setMonth} />
               </div>
               <div className="month-controls">
                 <button
