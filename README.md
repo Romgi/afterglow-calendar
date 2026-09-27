@@ -7,6 +7,7 @@ A personal calendar for the songs that take you back. Built with Next.js, Spotif
 ## What it does
 
 - Click an empty day, search Spotify, and give that chapter of your life a song.
+- The song picker suggests your most-played songs from the selected Monday–Sunday week, using available Spotify listening history. Choose a suggestion to set its dates and favorite clip, or search for any song.
 - New memories span seven inclusive days, or end the day before the next song begins.
 - Album artwork supplies the calendar color; you can also choose your own.
 - Drag either edge of a memory to adjust its dates. Keyboard users can focus an edge and use left/right for one day, up/down for one week. Neighboring songs never overlap.
@@ -53,6 +54,14 @@ Import this repository into Vercel as a Next.js project. Add the four environmen
 The app owner and listeners need Spotify Premium for browser playback. New Development Mode apps are limited to five explicitly allowed users. Add intended accounts in the Spotify app's Users and Access page. A public website does not remove this Spotify restriction; broader availability requires Spotify approval. See [current quota rules](https://developer.spotify.com/documentation/web-api/concepts/quota-modes).
 
 Clips control Spotify playback; audio is never downloaded or stored. Stop timing uses the browser SDK and is approximate. Background tab throttling and network/device behavior may delay stopping. Spotify's browser player also requires protected media support.
+
+### Weekly song suggestions
+
+Existing accounts must reconnect Spotify once to grant `user-read-recently-played`. The song picker includes an **Enable song suggestions** button and returns to the selected date after reconnecting.
+
+Afterglow collects Spotify's available recent plays when you open the app or song picker, and every five minutes while the app is visible. Plays are saved privately per account and deduplicated by track and timestamp, so recorded history remains available when revisiting past weeks. Week boundaries follow your browser's local timezone, including daylight-saving changes.
+
+Spotify does not supply an exact, complete listening chart for arbitrary past weeks. Suggestions rank only the plays Afterglow has collected, with the latest play breaking ties. Historical gaps and listening between visits may be missing; the interface labels these as recorded plays. Future weeks and weeks with no recorded plays show an explanatory empty state. This does not use Spotify's approximately four-week “top tracks” list as a substitute for a selected week. See [Spotify's recent-history API](https://developer.spotify.com/documentation/web-api/reference/get-recently-played).
 
 ## Verification
 

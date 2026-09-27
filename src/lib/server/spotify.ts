@@ -6,13 +6,47 @@ import { ApiError } from "./http";
 import { isSpotifyArtwork } from "./validation";
 
 export const SPOTIFY_SCOPES =
-  "streaming user-read-private user-read-email user-read-playback-state user-modify-playback-state";
-type Tokens = { accessToken: string; refreshToken: string };
+  "streaming user-read-private user-read-email user-read-playback-state user-modify-playback-state user-read-recently-played";
+export const LISTENING_SCOPE = "user-read-recently-played";
+type Tokens = { accessToken: string; refreshToken: string; scopes?: string[] };
 type TokenResponse = {
   access_token: string;
   refresh_token?: string;
   expires_in: number;
+  scope?: string;
 };
+
+// Refresh responses may omit scope; that never grants new permissions.
+export function grantedSpotifyScopes(scope: unknown, previous: string[] = []) {
+  return typeof scope === "string"
+    ? [...new Set(scope.split(/\s+/).filter(Boolean))]
+    : [...previous];
+}
+
+function checkScope(tokens: Tokens, requiredScope?: string) {
+  if (requiredScope && !tokens.scopes?.includes(requiredScope))
+    throw new ApiError(
+      403,
+      "Reconnect Spotify to allow listening-history suggestions.",
+      "scope_required",
+    );
+}
+
+export async function requireSpotifyScope(userId: string, scope: string) {
+  const sql = await database();
+  const rows =
+    await sql`SELECT token_cipher FROM afterglow_users WHERE id = ${userId}`;
+  const tokens = rows[0]?.token_cipher
+    ? unseal<Tokens>(rows[0].token_cipher as string, "spotify-tokens")
+    : null;
+  if (!tokens?.accessToken || !tokens.refreshToken)
+    throw new ApiError(
+      401,
+      "Connect Spotify again to continue.",
+      "reauth_required",
+    );
+  checkScope(tokens, scope);
+}
 
 export async function exchangeToken(
   params: URLSearchParams,
@@ -84,7 +118,11 @@ export async function saveSpotifyAccount(tokens: TokenResponse) {
       ? rawImage
       : null;
   const encrypted = seal(
-    { accessToken: tokens.access_token, refreshToken: tokens.refresh_token },
+    {
+      accessToken: tokens.access_token,
+      refreshToken: tokens.refresh_token,
+      scopes: grantedSpotifyScopes(tokens.scope),
+    },
     "spotify-tokens",
   );
   const expires = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
@@ -96,12 +134,18 @@ export async function saveSpotifyAccount(tokens: TokenResponse) {
       token_cipher = EXCLUDED.token_cipher, access_expires_at = EXCLUDED.access_expires_at,
       refresh_lock_id = NULL, refresh_lock_until = NULL, updated_at = NOW()
   `;
+  // A newly granted permission should work immediately after OAuth returns.
+  await sql`
+    UPDATE afterglow_listening_sync SET attempted_at = to_timestamp(0), error_code = NULL
+    WHERE user_id = ${profile.id} AND error_code IN ('scope_required', 'reauth_required')
+  `;
   return profile.id as string;
 }
 
 export async function accessToken(
   userId: string,
   forceRefresh = false,
+  requiredScope?: string,
 ): Promise<string> {
   const sql = await database();
   const leaseId = randomToken(16);
@@ -120,6 +164,7 @@ export async function accessToken(
         "Connect Spotify again to continue.",
         "reauth_required",
       );
+    checkScope(tokens, requiredScope);
     const expires = new Date(row.access_expires_at as string).getTime();
     if (forceRefresh && rejectedAccessToken === null) {
       rejectedAccessToken = tokens.accessToken;
@@ -153,6 +198,7 @@ export async function accessToken(
         {
           accessToken: refreshed.access_token,
           refreshToken: refreshed.refresh_token || tokens.refreshToken,
+          scopes: grantedSpotifyScopes(refreshed.scope, tokens.scopes),
         },
         "spotify-tokens",
       );
@@ -160,6 +206,14 @@ export async function accessToken(
         Date.now() + refreshed.expires_in * 1000,
       ).toISOString();
       await sql`UPDATE afterglow_users SET token_cipher = ${cipher}, access_expires_at = ${nextExpiry}, updated_at = NOW() WHERE id = ${userId} AND refresh_lock_id = ${leaseId}`;
+      checkScope(
+        {
+          accessToken: refreshed.access_token,
+          refreshToken: refreshed.refresh_token || tokens.refreshToken,
+          scopes: grantedSpotifyScopes(refreshed.scope, tokens.scopes),
+        },
+        requiredScope,
+      );
       return refreshed.access_token;
     } catch (error) {
       if (error instanceof ApiError && error.code === "reauth_required") {
@@ -184,12 +238,29 @@ export async function spotifyError(response: Response) {
       "Connect Spotify again to continue.",
       "reauth_required",
     );
-  if (response.status === 403)
+  if (response.status === 403) {
+    const body = await response.json().catch(() => null);
+    const description =
+      typeof body?.error?.message === "string" ? body.error.message : "";
+    if (
+      response.headers
+        .get("www-authenticate")
+        ?.includes("insufficient_scope") ||
+      /insufficient.*scope|scope.*(?:missing|required|insufficient)/i.test(
+        description,
+      )
+    )
+      return new ApiError(
+        403,
+        "Reconnect Spotify to allow listening-history suggestions.",
+        "scope_required",
+      );
     return new ApiError(
       403,
       "Spotify could not allow this action. Check Premium and the app's Spotify user access list.",
       "spotify_forbidden",
     );
+  }
   if (response.status === 404)
     return new ApiError(
       404,
@@ -213,6 +284,7 @@ export async function spotifyFetch(
   userId: string,
   path: string,
   init: RequestInit = {},
+  requiredScope?: string,
 ) {
   const send = (token: string) =>
     fetch(`https://api.spotify.com/v1${path}`, {
@@ -221,9 +293,9 @@ export async function spotifyFetch(
       signal: AbortSignal.timeout(12_000),
       headers: { ...init.headers, Authorization: `Bearer ${token}` },
     });
-  let response = await send(await accessToken(userId));
+  let response = await send(await accessToken(userId, false, requiredScope));
   if (response.status === 401)
-    response = await send(await accessToken(userId, true));
+    response = await send(await accessToken(userId, true, requiredScope));
   if (!response.ok) throw await spotifyError(response);
   return response;
 }

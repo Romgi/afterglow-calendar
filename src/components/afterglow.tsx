@@ -31,6 +31,10 @@ import {
 } from "@/lib/calendar";
 import { demoMemories } from "@/lib/demo";
 import { useSpotifyPlayer } from "@/lib/use-spotify-player";
+import {
+  SUGGESTION_DAY_KEY,
+  useListeningHistory,
+} from "@/lib/use-listening-history";
 import type { Memory, Session } from "@/lib/types";
 
 export function Afterglow() {
@@ -65,6 +69,7 @@ export function Afterglow() {
     editing = useRef(false);
   editing.current = editor !== null;
   const player = useSpotifyPlayer(!!session?.user);
+  useListeningHistory(session?.user?.id);
   const selected = memories.find((m) => m.id === selectedId) ?? null;
   const playingMemory =
     memories.find((m) => m.id === player.activeId) ?? selected;
@@ -119,6 +124,28 @@ export function Afterglow() {
           setMemories(samples);
           setSelectedId(samples[0].id);
           setSelectedDay(samples[0].start);
+        }
+        if (!cancelled && data.user) {
+          try {
+            const suggestionDay = sessionStorage.getItem(SUGGESTION_DAY_KEY);
+            sessionStorage.removeItem(SUGGESTION_DAY_KEY);
+            if (suggestionDay && /^\d{4}-\d{2}-\d{2}$/.test(suggestionDay)) {
+              const date = new Date(`${suggestionDay}T12:00:00`);
+              if (
+                Number.isFinite(date.getTime()) &&
+                dateKey(date) === suggestionDay
+              ) {
+                setMonth(new Date(date.getFullYear(), date.getMonth(), 1));
+                setSelectedDay(suggestionDay);
+                setEditor({
+                  day: suggestionDay,
+                  existing: dayMemory(suggestionDay, saved.current) ?? null,
+                });
+              }
+            }
+          } catch {
+            /* Reconnecting still works when browser storage is disabled. */
+          }
         }
         const params = new URLSearchParams(window.location.search);
         if (params.get("auth_error")) {
@@ -756,6 +783,7 @@ export function Afterglow() {
           existing={editor.existing}
           memories={memories}
           demo={isDemo}
+          userId={session?.user?.id}
           onClose={() => {
             setEditor(null);
             if (player.playing) void player.pause();

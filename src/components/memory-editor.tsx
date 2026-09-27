@@ -21,12 +21,14 @@ import {
 import { albumColor } from "@/lib/color";
 import { demoTracks } from "@/lib/demo";
 import type { Memory, Track } from "@/lib/types";
+import { SongSuggestions } from "./song-suggestions";
 
 interface Props {
   day: string;
   existing: Memory | null;
   memories: Memory[];
   demo: boolean;
+  userId?: string;
   onClose: () => void;
   onSave: (memory: Memory) => void;
   onDelete: (id: string) => void;
@@ -37,6 +39,7 @@ export function MemoryEditor({
   existing,
   memories,
   demo,
+  userId,
   onClose,
   onSave,
   onDelete,
@@ -190,7 +193,8 @@ export function MemoryEditor({
       {!track ? (
         <>
           <div className="editor-date">
-            Starting {prettyDate(day, true)} <span>· up to 7 days</span>
+            Starting {prettyDate(start || day, true)}{" "}
+            <span>· up to 7 days</span>
           </div>
           <label className="search-field">
             <MagnifyingGlass size={22} />
@@ -203,40 +207,48 @@ export function MemoryEditor({
               onChange={(e) => setQuery(e.target.value)}
             />
           </label>
-          <div className="search-results" aria-live="polite">
-            {searching ? (
-              <p className="search-message">Finding your song…</p>
-            ) : results.length ? (
-              results.map((result) => (
-                <button
-                  key={result.id}
-                  className="search-result"
-                  onClick={() => void choose(result)}
-                >
-                  <Image
-                    src={result.artwork || "/album-placeholder.svg"}
-                    alt={`${result.album} album cover`}
-                    width={52}
-                    height={52}
-                    unoptimized
-                  />
-                  <span>
-                    <strong>{result.title}</strong>
-                    <small>
-                      {result.artist} · {result.album}
-                    </small>
-                  </span>
-                  <Plus size={20} />
-                </button>
-              ))
-            ) : (
-              <p className="search-message">
-                {query.length >= 2
-                  ? "No songs found. Try a different title or artist."
-                  : "Find the song that takes you back."}
-              </p>
-            )}
-          </div>
+          {query.trim().length < 2 ? (
+            <SongSuggestions
+              day={start || day}
+              userId={userId}
+              onChoose={(value) => void choose(value)}
+            />
+          ) : (
+            <div className="search-results" aria-live="polite">
+              {searching ? (
+                <p className="search-message">Finding your song…</p>
+              ) : results.length ? (
+                results.map((result) => (
+                  <button
+                    key={result.id}
+                    className="search-result"
+                    onClick={() => void choose(result)}
+                  >
+                    <Image
+                      src={result.artwork || "/album-placeholder.svg"}
+                      alt={`${result.album} album cover`}
+                      width={52}
+                      height={52}
+                      unoptimized
+                    />
+                    <span>
+                      <strong>{result.title}</strong>
+                      <small>
+                        {result.artist} · {result.album}
+                      </small>
+                    </span>
+                    <Plus size={20} />
+                  </button>
+                ))
+              ) : (
+                <p className="search-message">
+                  {query.length >= 2
+                    ? "No songs found. Try a different title or artist."
+                    : "Find the song that takes you back."}
+                </p>
+              )}
+            </div>
+          )}
           <div className="search-source">
             <SpotifyLogo size={20} weight="fill" />
             {demo

@@ -29,6 +29,20 @@ export async function database() {
         expires_at TIMESTAMPTZ NOT NULL
       )`,
         sql`CREATE INDEX IF NOT EXISTS afterglow_sessions_user ON afterglow_sessions(user_id)`,
+        sql`CREATE TABLE IF NOT EXISTS afterglow_listening_plays (
+        user_id TEXT NOT NULL REFERENCES afterglow_users(id) ON DELETE CASCADE,
+        track_id TEXT NOT NULL,
+        played_at TIMESTAMPTZ NOT NULL,
+        track JSONB NOT NULL,
+        PRIMARY KEY (user_id, track_id, played_at)
+      )`,
+        sql`CREATE INDEX IF NOT EXISTS afterglow_listening_plays_week ON afterglow_listening_plays(user_id, played_at)`,
+        sql`CREATE TABLE IF NOT EXISTS afterglow_listening_sync (
+        user_id TEXT PRIMARY KEY REFERENCES afterglow_users(id) ON DELETE CASCADE,
+        attempted_at TIMESTAMPTZ NOT NULL,
+        synced_at TIMESTAMPTZ,
+        error_code TEXT
+      )`,
       ]);
     })().catch((error) => {
       schemaReady = undefined;
